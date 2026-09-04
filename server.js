@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || [PIN];
+const PORT = process.env.PORT || 3000;
 const ADMIN_PIN = 'Kushal';
 
 const dbClient = createClient({
@@ -23,7 +23,6 @@ const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 const upload = multer({ dest: uploadDir });
 
-// Convert BigInt values to regular numbers
 function fixRow(row) {
   var obj = {};
   for (var key in row) {
@@ -224,10 +223,10 @@ async function startServer() {
   app.get('/api/stats', async function(req, res) {
     try {
       var totalR = await dbClient.execute('SELECT COUNT(*) as c FROM stations');
-      var northR = await dbClient.execute('SELECT COUNT(*) as c FROM stations WHERE zone = "North"');
-      var statesR = await dbClient.execute('SELECT state, COUNT(*) as count FROM stations WHERE state != "" GROUP BY state ORDER BY count DESC');
-      var comsR = await dbClient.execute('SELECT com, COUNT(*) as count FROM stations WHERE com != "" GROUP BY com ORDER BY count DESC');
-      var ctlsR = await dbClient.execute('SELECT ctl_name, COUNT(*) as count FROM stations WHERE ctl_name != "" AND LOWER(ctl_name) NOT LIKE "%no data%" GROUP BY ctl_name ORDER BY count DESC');
+      var northR = await dbClient.execute("SELECT COUNT(*) as c FROM stations WHERE zone = 'North'");
+      var statesR = await dbClient.execute("SELECT state, COUNT(*) as count FROM stations WHERE state != '' GROUP BY state ORDER BY count DESC");
+      var comsR = await dbClient.execute("SELECT com, COUNT(*) as count FROM stations WHERE com != '' GROUP BY com ORDER BY count DESC");
+      var ctlsR = await dbClient.execute("SELECT ctl_name, COUNT(*) as count FROM stations WHERE ctl_name != '' AND LOWER(ctl_name) NOT LIKE '%no data%' GROUP BY ctl_name ORDER BY count DESC");
       res.json({
         total: Number(totalR.rows[0].c),
         northCount: Number(northR.rows[0].c),
@@ -250,9 +249,9 @@ async function startServer() {
   // GET /api/filters
   app.get('/api/filters', async function(req, res) {
     try {
-      var statesR = await dbClient.execute('SELECT DISTINCT state FROM stations WHERE state != "" ORDER BY state');
-      var comsR = await dbClient.execute('SELECT DISTINCT com FROM stations WHERE com != "" ORDER BY com');
-      var ctlsR = await dbClient.execute('SELECT DISTINCT ctl_name FROM stations WHERE ctl_name != "" AND LOWER(ctl_name) NOT LIKE "%no data%" ORDER BY ctl_name');
+      var statesR = await dbClient.execute("SELECT DISTINCT state FROM stations WHERE state != '' ORDER BY state");
+      var comsR = await dbClient.execute("SELECT DISTINCT com FROM stations WHERE com != '' ORDER BY com");
+      var ctlsR = await dbClient.execute("SELECT DISTINCT ctl_name FROM stations WHERE ctl_name != '' AND LOWER(ctl_name) NOT LIKE '%no data%' ORDER BY ctl_name");
       res.json({
         states: statesR.rows.map(function(r) { return r.state; }),
         coms: comsR.rows.map(function(r) { return r.com; }),
