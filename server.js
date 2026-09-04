@@ -10,6 +10,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PIN = 'Kushal';
 const DB_PATH = path.join(__dirname, 'stations.db');
+const SEED_FILE = path.join(__dirname, 'seed-data.xlsx');
 
 app.use(cors());
 app.use(express.json());
@@ -43,6 +44,35 @@ function normalizeColumn(col) {
     'zm': 'zm', 'zm_name': 'zm', 'zone_manager': 'zm'
   };
   return map[c] || null;
+}
+
+function importExcelData(filePath) {
+  var workbook = XLSX.readFile(filePath);
+  var sheetName = workbook.SheetNames[0];
+  var rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+
+  if (rows.length === 0) return 0;
+
+  var excelCols = Object.keys(rows[0]);
+  var colMap = {};
+  excelCols.forEach(function(ec) { var mapped = normalizeColumn(ec); if (mapped) colMap[ec] = mapped; });
+
+  console.log('Column mapping:', colMap);
+
+  db.run('DELETE FROM stations');
+
+  for (var i = 0; i < rows.length; i++) {
+    var mapped = { station_code: '', location: '', state: '', zone: '', sm_name: '', sm_number: '', ctl_name: '', ctl_number: '', crm: '', com: '', zm: '' };
+    for (var excelCol in colMap) { mapped[colMap[excelCol]] = String(rows[i][excelCol] || '').trim(); }
+    db.run("INSERT INTO stations (station_code, location, state, zone, sm_name, sm_number, ctl_name, ctl_number, crm, com, zm) VALUES ($a,$b,$c,$d,$e,$f,$g,$h,$i,$j,$k)", {
+      '$a': mapped.station_code, '$b': mapped.location, '$c': mapped.state, '$d': mapped.zone,
+      '$e': mapped.sm_name, '$f': mapped.sm_number, '$g': mapped.ctl_name, '$h': mapped.ctl_number,
+      '$i': mapped.crm, '$j': mapped.com, '$k': mapped.zm
+    });
+  }
+
+  saveDB();
+  return rows.length;
 }
 
 function getAll(sql, params) {
@@ -86,6 +116,14 @@ initSqlJs().then(function(SQL) {
     updated_at TEXT DEFAULT (datetime('now'))
   )`);
   saveDB();
+
+  // AUTO-SEED: If database is empty and seed file exists, import it
+  var seedCount = getOne('SELECT COUNT(*) as c FROM stations').c;
+  if (seedCount === 0 && fs.existsSync(SEED_FILE)) {
+    console.log('📦 Database empty — auto-seeding from seed-data.xlsx...');
+    var imported = importExcelData(SEED_FILE);
+    console.log('✅ Auto-seeded ' + imported + ' stations from seed-data.xlsx');
+  }
 
   // GET /api/stations
   app.get('/api/stations', function(req, res) {
@@ -195,37 +233,12 @@ initSqlJs().then(function(SQL) {
       }
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-      var workbook = XLSX.readFile(req.file.path);
-      var sheetName = workbook.SheetNames[0];
-      var rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
-
-      if (rows.length === 0) { fs.unlinkSync(req.file.path); return res.status(400).json({ error: 'Excel file is empty' }); }
-
-      var excelCols = Object.keys(rows[0]);
-      var colMap = {};
-      excelCols.forEach(function(ec) { var mapped = normalizeColumn(ec); if (mapped) colMap[ec] = mapped; });
-
-      console.log('Column mapping:', colMap);
-      console.log('Importing', rows.length, 'rows...');
-
-      db.run('DELETE FROM stations');
-
-      for (var i = 0; i < rows.length; i++) {
-        var mapped = { station_code: '', location: '', state: '', zone: '', sm_name: '', sm_number: '', ctl_name: '', ctl_number: '', crm: '', com: '', zm: '' };
-        for (var excelCol in colMap) { mapped[colMap[excelCol]] = String(rows[i][excelCol] || '').trim(); }
-        db.run("INSERT INTO stations (station_code, location, state, zone, sm_name, sm_number, ctl_name, ctl_number, crm, com, zm) VALUES ($a,$b,$c,$d,$e,$f,$g,$h,$i,$j,$k)", {
-          '$a': mapped.station_code, '$b': mapped.location, '$c': mapped.state, '$d': mapped.zone,
-          '$e': mapped.sm_name, '$f': mapped.sm_number, '$g': mapped.ctl_name, '$h': mapped.ctl_number,
-          '$i': mapped.crm, '$j': mapped.com, '$k': mapped.zm
-        });
-      }
-
-      saveDB();
+      console.log('Importing file:', req.file.originalname);
+      var count = importExcelData(req.file.path);
       fs.unlinkSync(req.file.path);
 
-      var count = getOne('SELECT COUNT(*) as c FROM stations');
-      console.log('Import complete:', count.c, 'stations');
-      res.json({ message: 'Successfully imported ' + count.c + ' stations', count: count.c });
+      console.log('Import complete:', count, 'stations');
+      res.json({ message: 'Successfully imported ' + count + ' stations', count: count });
     } catch (err) {
       console.error('Upload error:', err);
       if (req.file && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
