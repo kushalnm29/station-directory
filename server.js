@@ -1,5 +1,5 @@
 const express = require('express');
-const initSqlJs = require('sql.js');
+const { createClient } = require('@libsql/client');
 const multer = require('multer');
 const XLSX = require('xlsx');
 const cors = require('cors');
@@ -9,8 +9,12 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const ADMIN_PIN = 'Kushal';
-const DB_PATH = path.join(__dirname, 'stations.db');
-const SEED_FILE = path.join(__dirname, 'seed-data.xlsx');
+
+// Turso Cloud Database - REPLACE THESE WITH YOUR VALUES
+const dbClient = createClient({
+  url: process.env.TURSO_URL || 'YOUR_TURSO_URL_HERE',
+  authToken: process.env.TURSO_TOKEN || 'YOUR_TURSO_TOKEN_HERE'
+});
 
 app.use(cors());
 app.use(express.json());
@@ -19,14 +23,6 @@ app.use(express.static(path.join(__dirname, 'public')));
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 const upload = multer({ dest: uploadDir });
-
-var db;
-
-function saveDB() {
-  var data = db.export();
-  var buffer = Buffer.from(data);
-  fs.writeFileSync(DB_PATH, buffer);
-}
 
 function normalizeColumn(col) {
   var c = col.toString().trim().toLowerCase().replace(/[\s\-\/]+/g, '_');
@@ -46,7 +42,7 @@ function normalizeColumn(col) {
   return map[c] || null;
 }
 
-function importExcelData(filePath) {
+async function importExcelData(filePath) {
   var workbook = XLSX.readFile(filePath);
   var sheetName = workbook.SheetNames[0];
   var rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
@@ -59,155 +55,119 @@ function importExcelData(filePath) {
 
   console.log('Column mapping:', colMap);
 
-  db.run('DELETE FROM stations');
+  await dbClient.execute('DELETE FROM stations');
 
   for (var i = 0; i < rows.length; i++) {
     var mapped = { station_code: '', location: '', state: '', zone: '', sm_name: '', sm_number: '', ctl_name: '', ctl_number: '', crm: '', com: '', zm: '' };
     for (var excelCol in colMap) { mapped[colMap[excelCol]] = String(rows[i][excelCol] || '').trim(); }
-    db.run("INSERT INTO stations (station_code, location, state, zone, sm_name, sm_number, ctl_name, ctl_number, crm, com, zm) VALUES ($a,$b,$c,$d,$e,$f,$g,$h,$i,$j,$k)", {
-      '$a': mapped.station_code, '$b': mapped.location, '$c': mapped.state, '$d': mapped.zone,
-      '$e': mapped.sm_name, '$f': mapped.sm_number, '$g': mapped.ctl_name, '$h': mapped.ctl_number,
-      '$i': mapped.crm, '$j': mapped.com, '$k': mapped.zm
+    await dbClient.execute({
+      sql: "INSERT INTO stations (station_code, location, state, zone, sm_name, sm_number, ctl_name, ctl_number, crm, com, zm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      args: [mapped.station_code, mapped.location, mapped.state, mapped.zone, mapped.sm_name, mapped.sm_number, mapped.ctl_name, mapped.ctl_number, mapped.crm, mapped.com, mapped.zm]
     });
   }
 
-  saveDB();
   return rows.length;
 }
 
-function getAll(sql, params) {
-  var stmt = db.prepare(sql);
-  if (params) stmt.bind(params);
-  var rows = [];
-  while (stmt.step()) { rows.push(stmt.getAsObject()); }
-  stmt.free();
-  return rows;
-}
+async function startServer() {
+  // Create table
+  await dbClient.execute(`
+    CREATE TABLE IF NOT EXISTS stations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      station_code TEXT, location TEXT, state TEXT, zone TEXT,
+      sm_name TEXT, sm_number TEXT, ctl_name TEXT, ctl_number TEXT,
+      crm TEXT, com TEXT, zm TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
 
-function getOne(sql, params) {
-  var stmt = db.prepare(sql);
-  if (params) stmt.bind(params);
-  var row = null;
-  if (stmt.step()) { row = stmt.getAsObject(); }
-  stmt.free();
-  return row;
-}
+  // Auto-seed if database is empty and seed file exists
+  var countResult = await dbClient.execute('SELECT COUNT(*) as c FROM stations');
+  var seedCount = countResult.rows[0].c;
+  var seedFile = path.join(__dirname, 'seed-data.xlsx');
 
-function runSql(sql, params) {
-  if (params) { db.run(sql, params); }
-  else { db.run(sql); }
-  saveDB();
-}
-
-initSqlJs().then(function(SQL) {
-  if (fs.existsSync(DB_PATH)) {
-    var fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
-
-  db.run(`CREATE TABLE IF NOT EXISTS stations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    station_code TEXT, location TEXT, state TEXT, zone TEXT,
-    sm_name TEXT, sm_number TEXT, ctl_name TEXT, ctl_number TEXT,
-    crm TEXT, com TEXT, zm TEXT,
-    created_at TEXT DEFAULT (datetime('now')),
-    updated_at TEXT DEFAULT (datetime('now'))
-  )`);
-  saveDB();
-
-  // AUTO-SEED: If database is empty and seed file exists, import it
-  var seedCount = getOne('SELECT COUNT(*) as c FROM stations').c;
-  if (seedCount === 0 && fs.existsSync(SEED_FILE)) {
+  if (seedCount === 0 && fs.existsSync(seedFile)) {
     console.log('📦 Database empty — auto-seeding from seed-data.xlsx...');
-    var imported = importExcelData(SEED_FILE);
-    console.log('✅ Auto-seeded ' + imported + ' stations from seed-data.xlsx');
+    var imported = await importExcelData(seedFile);
+    console.log('✅ Auto-seeded ' + imported + ' stations');
   }
 
   // GET /api/stations
-  app.get('/api/stations', function(req, res) {
+  app.get('/api/stations', async function(req, res) {
     try {
       var search = req.query.search || '';
-      var state = req.query.state || '';
       var com = req.query.com || '';
       var ctl = req.query.ctl || '';
       var page = parseInt(req.query.page) || 1;
       var limit = parseInt(req.query.limit) || 50;
       var where = [];
-      var params = {};
+      var args = [];
 
       if (search) {
-        where.push("(station_code LIKE $search OR location LIKE $search OR state LIKE $search OR sm_name LIKE $search OR ctl_name LIKE $search OR crm LIKE $search OR com LIKE $search OR zm LIKE $search OR sm_number LIKE $search OR ctl_number LIKE $search)");
-        params['$search'] = '%' + search + '%';
+        where.push("(station_code LIKE ? OR location LIKE ? OR state LIKE ? OR sm_name LIKE ? OR ctl_name LIKE ? OR crm LIKE ? OR com LIKE ? OR zm LIKE ? OR sm_number LIKE ? OR ctl_number LIKE ?)");
+        var s = '%' + search + '%';
+        args.push(s, s, s, s, s, s, s, s, s, s);
       }
-      if (state) { where.push('state = $state'); params['$state'] = state; }
-      if (com) { where.push('com = $com'); params['$com'] = com; }
-      if (ctl) { where.push('ctl_name = $ctl'); params['$ctl'] = ctl; }
+      if (com) { where.push('com = ?'); args.push(com); }
+      if (ctl) { where.push('ctl_name = ?'); args.push(ctl); }
 
       var whereClause = where.length ? 'WHERE ' + where.join(' AND ') : '';
       var offset = (page - 1) * limit;
 
-      var countRow = getOne('SELECT COUNT(*) as total FROM stations ' + whereClause, params);
-      var total = countRow ? countRow.total : 0;
+      var countResult = await dbClient.execute({ sql: 'SELECT COUNT(*) as total FROM stations ' + whereClause, args: args });
+      var total = countResult.rows[0].total;
 
-      var queryParams = Object.assign({}, params);
-      queryParams['$limit'] = limit;
-      queryParams['$offset'] = offset;
-      var rows = getAll('SELECT * FROM stations ' + whereClause + ' ORDER BY station_code ASC LIMIT $limit OFFSET $offset', queryParams);
+      var dataArgs = args.slice();
+      dataArgs.push(limit, offset);
+      var dataResult = await dbClient.execute({ sql: 'SELECT * FROM stations ' + whereClause + ' ORDER BY station_code ASC LIMIT ? OFFSET ?', args: dataArgs });
 
-      res.json({ stations: rows, total: total, page: page, totalPages: Math.ceil(total / limit) });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+      res.json({ stations: dataResult.rows, total: total, page: page, totalPages: Math.ceil(total / limit) });
+    } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
   // GET /api/stations/:id
-  app.get('/api/stations/:id', function(req, res) {
+  app.get('/api/stations/:id', async function(req, res) {
     try {
-      var row = getOne('SELECT * FROM stations WHERE id = $id', { '$id': parseInt(req.params.id) });
-      if (!row) return res.status(404).json({ error: 'Station not found' });
-      res.json(row);
+      var result = await dbClient.execute({ sql: 'SELECT * FROM stations WHERE id = ?', args: [parseInt(req.params.id)] });
+      if (result.rows.length === 0) return res.status(404).json({ error: 'Station not found' });
+      res.json(result.rows[0]);
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // POST /api/stations
-  app.post('/api/stations', function(req, res) {
+  app.post('/api/stations', async function(req, res) {
     try {
       var b = req.body;
-      runSql("INSERT INTO stations (station_code, location, state, zone, sm_name, sm_number, ctl_name, ctl_number, crm, com, zm) VALUES ($a,$b,$c,$d,$e,$f,$g,$h,$i,$j,$k)", {
-        '$a': b.station_code || '', '$b': b.location || '', '$c': b.state || '', '$d': b.zone || '',
-        '$e': b.sm_name || '', '$f': b.sm_number || '', '$g': b.ctl_name || '', '$h': b.ctl_number || '',
-        '$i': b.crm || '', '$j': b.com || '', '$k': b.zm || ''
+      await dbClient.execute({
+        sql: "INSERT INTO stations (station_code, location, state, zone, sm_name, sm_number, ctl_name, ctl_number, crm, com, zm) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        args: [b.station_code || '', b.location || '', b.state || '', b.zone || '', b.sm_name || '', b.sm_number || '', b.ctl_name || '', b.ctl_number || '', b.crm || '', b.com || '', b.zm || '']
       });
       res.json({ message: 'Station added' });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // PUT /api/stations/:id
-  app.put('/api/stations/:id', function(req, res) {
+  app.put('/api/stations/:id', async function(req, res) {
     try {
       var fields = ['station_code','location','state','zone','sm_name','sm_number','ctl_name','ctl_number','crm','com','zm'];
       var updates = [];
-      var params = { '$id': parseInt(req.params.id) };
-      var idx = 0;
+      var args = [];
       fields.forEach(function(f) {
-        if (req.body[f] !== undefined) {
-          var key = '$v' + idx;
-          updates.push(f + ' = ' + key);
-          params[key] = req.body[f];
-          idx++;
-        }
+        if (req.body[f] !== undefined) { updates.push(f + ' = ?'); args.push(req.body[f]); }
       });
       if (updates.length === 0) return res.status(400).json({ error: 'No fields to update' });
       updates.push("updated_at = datetime('now')");
-      runSql('UPDATE stations SET ' + updates.join(', ') + ' WHERE id = $id', params);
+      args.push(parseInt(req.params.id));
+      await dbClient.execute({ sql: 'UPDATE stations SET ' + updates.join(', ') + ' WHERE id = ?', args: args });
       res.json({ message: 'Station updated' });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // DELETE /api/stations/:id
-  app.delete('/api/stations/:id', function(req, res) {
+  app.delete('/api/stations/:id', async function(req, res) {
     try {
-      runSql('DELETE FROM stations WHERE id = $id', { '$id': parseInt(req.params.id) });
+      await dbClient.execute({ sql: 'DELETE FROM stations WHERE id = ?', args: [parseInt(req.params.id)] });
       res.json({ message: 'Station deleted' });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
@@ -215,7 +175,7 @@ initSqlJs().then(function(SQL) {
   // POST /api/verify-admin
   app.post('/api/verify-admin', function(req, res) {
     var pin = req.body.password || '';
-    console.log('Login attempt:', pin, '| Expected:', ADMIN_PIN, '| Match:', pin === ADMIN_PIN);
+    console.log('Login attempt:', pin, '| Match:', pin === ADMIN_PIN);
     if (pin === ADMIN_PIN) {
       res.json({ success: true });
     } else {
@@ -224,7 +184,7 @@ initSqlJs().then(function(SQL) {
   });
 
   // POST /api/upload
-  app.post('/api/upload', upload.single('file'), function(req, res) {
+  app.post('/api/upload', upload.single('file'), async function(req, res) {
     try {
       var pin = req.query.key || '';
       if (pin !== ADMIN_PIN) {
@@ -234,7 +194,7 @@ initSqlJs().then(function(SQL) {
       if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
       console.log('Importing file:', req.file.originalname);
-      var count = importExcelData(req.file.path);
+      var count = await importExcelData(req.file.path);
       fs.unlinkSync(req.file.path);
 
       console.log('Import complete:', count, 'stations');
@@ -247,40 +207,50 @@ initSqlJs().then(function(SQL) {
   });
 
   // GET /api/stats
-  app.get('/api/stats', function(req, res) {
+  app.get('/api/stats', async function(req, res) {
     try {
-      var total = getOne('SELECT COUNT(*) as c FROM stations').c;
-      var northCount = getOne('SELECT COUNT(*) as c FROM stations WHERE zone = "North"').c;
-      var states = getAll('SELECT state, COUNT(*) as count FROM stations WHERE state != "" GROUP BY state ORDER BY count DESC');
-      var coms = getAll('SELECT com, COUNT(*) as count FROM stations WHERE com != "" GROUP BY com ORDER BY count DESC');
-      var ctls = getAll('SELECT ctl_name, COUNT(*) as count FROM stations WHERE ctl_name != "" AND LOWER(ctl_name) NOT LIKE "%no data%" GROUP BY ctl_name ORDER BY count DESC');
-      res.json({ total: total, northCount: northCount, states: states, coms: coms, ctls: ctls });
+      var totalR = await dbClient.execute('SELECT COUNT(*) as c FROM stations');
+      var northR = await dbClient.execute('SELECT COUNT(*) as c FROM stations WHERE zone = "North"');
+      var statesR = await dbClient.execute('SELECT state, COUNT(*) as count FROM stations WHERE state != "" GROUP BY state ORDER BY count DESC');
+      var comsR = await dbClient.execute('SELECT com, COUNT(*) as count FROM stations WHERE com != "" GROUP BY com ORDER BY count DESC');
+      var ctlsR = await dbClient.execute('SELECT ctl_name, COUNT(*) as count FROM stations WHERE ctl_name != "" AND LOWER(ctl_name) NOT LIKE "%no data%" GROUP BY ctl_name ORDER BY count DESC');
+      res.json({ total: totalR.rows[0].c, northCount: northR.rows[0].c, states: statesR.rows, coms: comsR.rows, ctls: ctlsR.rows });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // GET /api/export
-  app.get('/api/export', function(req, res) {
+  app.get('/api/export', async function(req, res) {
     try {
-      var rows = getAll('SELECT * FROM stations ORDER BY station_code');
+      var result = await dbClient.execute('SELECT * FROM stations ORDER BY station_code');
       res.setHeader('Content-Disposition', 'attachment; filename=stations_export.json');
-      res.json(rows);
+      res.json(result.rows);
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
   // GET /api/filters
-  app.get('/api/filters', function(req, res) {
+  app.get('/api/filters', async function(req, res) {
     try {
-      var states = getAll('SELECT DISTINCT state FROM stations WHERE state != "" ORDER BY state').map(function(r) { return r.state; });
-      var coms = getAll('SELECT DISTINCT com FROM stations WHERE com != "" ORDER BY com').map(function(r) { return r.com; });
-      var ctls = getAll('SELECT DISTINCT ctl_name FROM stations WHERE ctl_name != "" AND LOWER(ctl_name) NOT LIKE "%no data%" ORDER BY ctl_name').map(function(r) { return r.ctl_name; });
-      res.json({ states: states, coms: coms, ctls: ctls });
+      var statesR = await dbClient.execute('SELECT DISTINCT state FROM stations WHERE state != "" ORDER BY state');
+      var comsR = await dbClient.execute('SELECT DISTINCT com FROM stations WHERE com != "" ORDER BY com');
+      var ctlsR = await dbClient.execute('SELECT DISTINCT ctl_name FROM stations WHERE ctl_name != "" AND LOWER(ctl_name) NOT LIKE "%no data%" ORDER BY ctl_name');
+      res.json({
+        states: statesR.rows.map(function(r) { return r.state; }),
+        coms: comsR.rows.map(function(r) { return r.com; }),
+        ctls: ctlsR.rows.map(function(r) { return r.ctl_name; })
+      });
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
-  app.listen(PORT, function() {
-    var count = getOne('SELECT COUNT(*) as c FROM stations').c;
+  app.listen(PORT, async function() {
+    var countResult = await dbClient.execute('SELECT COUNT(*) as c FROM stations');
     console.log('\n🚀 Station Directory running at http://localhost:' + PORT);
-    console.log('📊 Stations in DB: ' + count);
+    console.log('📊 Stations in DB: ' + countResult.rows[0].c);
     console.log('🔐 Admin pin: ' + ADMIN_PIN);
+    console.log('☁️  Database: Turso Cloud (permanent storage)');
   });
+}
+
+startServer().catch(function(err) {
+  console.error('Failed to start:', err);
+  process.exit(1);
 });
