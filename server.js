@@ -7,10 +7,9 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || [PIN];
 const ADMIN_PIN = 'Kushal';
 
-// Turso Cloud Database - REPLACE THESE WITH YOUR VALUES
 const dbClient = createClient({
   url: process.env.TURSO_URL || 'YOUR_TURSO_URL_HERE',
   authToken: process.env.TURSO_TOKEN || 'YOUR_TURSO_TOKEN_HERE'
@@ -23,6 +22,23 @@ app.use(express.static(path.join(__dirname, 'public')));
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir);
 const upload = multer({ dest: uploadDir });
+
+// Convert BigInt values to regular numbers
+function fixRow(row) {
+  var obj = {};
+  for (var key in row) {
+    if (typeof row[key] === 'bigint') {
+      obj[key] = Number(row[key]);
+    } else {
+      obj[key] = row[key];
+    }
+  }
+  return obj;
+}
+
+function fixRows(rows) {
+  return rows.map(fixRow);
+}
 
 function normalizeColumn(col) {
   var c = col.toString().trim().toLowerCase().replace(/[\s\-\/]+/g, '_');
@@ -70,7 +86,6 @@ async function importExcelData(filePath) {
 }
 
 async function startServer() {
-  // Create table
   await dbClient.execute(`
     CREATE TABLE IF NOT EXISTS stations (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -82,15 +97,14 @@ async function startServer() {
     )
   `);
 
-  // Auto-seed if database is empty and seed file exists
   var countResult = await dbClient.execute('SELECT COUNT(*) as c FROM stations');
-  var seedCount = countResult.rows[0].c;
+  var seedCount = Number(countResult.rows[0].c);
   var seedFile = path.join(__dirname, 'seed-data.xlsx');
 
   if (seedCount === 0 && fs.existsSync(seedFile)) {
     console.log('📦 Database empty — auto-seeding from seed-data.xlsx...');
     var imported = await importExcelData(seedFile);
-    console.log('✅ Auto-seeded ' + imported + ' stations');
+    console.log('✅ Auto-seeded ' + imported + ' stations from seed-data.xlsx');
   }
 
   // GET /api/stations
@@ -116,13 +130,13 @@ async function startServer() {
       var offset = (page - 1) * limit;
 
       var countResult = await dbClient.execute({ sql: 'SELECT COUNT(*) as total FROM stations ' + whereClause, args: args });
-      var total = countResult.rows[0].total;
+      var total = Number(countResult.rows[0].total);
 
       var dataArgs = args.slice();
       dataArgs.push(limit, offset);
       var dataResult = await dbClient.execute({ sql: 'SELECT * FROM stations ' + whereClause + ' ORDER BY station_code ASC LIMIT ? OFFSET ?', args: dataArgs });
 
-      res.json({ stations: dataResult.rows, total: total, page: page, totalPages: Math.ceil(total / limit) });
+      res.json({ stations: fixRows(dataResult.rows), total: total, page: page, totalPages: Math.ceil(total / limit) });
     } catch (err) { console.error(err); res.status(500).json({ error: err.message }); }
   });
 
@@ -131,7 +145,7 @@ async function startServer() {
     try {
       var result = await dbClient.execute({ sql: 'SELECT * FROM stations WHERE id = ?', args: [parseInt(req.params.id)] });
       if (result.rows.length === 0) return res.status(404).json({ error: 'Station not found' });
-      res.json(result.rows[0]);
+      res.json(fixRow(result.rows[0]));
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
@@ -214,8 +228,14 @@ async function startServer() {
       var statesR = await dbClient.execute('SELECT state, COUNT(*) as count FROM stations WHERE state != "" GROUP BY state ORDER BY count DESC');
       var comsR = await dbClient.execute('SELECT com, COUNT(*) as count FROM stations WHERE com != "" GROUP BY com ORDER BY count DESC');
       var ctlsR = await dbClient.execute('SELECT ctl_name, COUNT(*) as count FROM stations WHERE ctl_name != "" AND LOWER(ctl_name) NOT LIKE "%no data%" GROUP BY ctl_name ORDER BY count DESC');
-      res.json({ total: totalR.rows[0].c, northCount: northR.rows[0].c, states: statesR.rows, coms: comsR.rows, ctls: ctlsR.rows });
-    } catch (err) { res.status(500).json({ error: err.message }); }
+      res.json({
+        total: Number(totalR.rows[0].c),
+        northCount: Number(northR.rows[0].c),
+        states: fixRows(statesR.rows),
+        coms: fixRows(comsR.rows),
+        ctls: fixRows(ctlsR.rows)
+      });
+    } catch (err) { console.error('Stats error:', err); res.status(500).json({ error: err.message }); }
   });
 
   // GET /api/export
@@ -223,7 +243,7 @@ async function startServer() {
     try {
       var result = await dbClient.execute('SELECT * FROM stations ORDER BY station_code');
       res.setHeader('Content-Disposition', 'attachment; filename=stations_export.json');
-      res.json(result.rows);
+      res.json(fixRows(result.rows));
     } catch (err) { res.status(500).json({ error: err.message }); }
   });
 
@@ -244,7 +264,7 @@ async function startServer() {
   app.listen(PORT, async function() {
     var countResult = await dbClient.execute('SELECT COUNT(*) as c FROM stations');
     console.log('\n🚀 Station Directory running at http://localhost:' + PORT);
-    console.log('📊 Stations in DB: ' + countResult.rows[0].c);
+    console.log('📊 Stations in DB: ' + Number(countResult.rows[0].c));
     console.log('🔐 Admin pin: ' + ADMIN_PIN);
     console.log('☁️  Database: Turso Cloud (permanent storage)');
   });
