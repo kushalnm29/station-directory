@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📍 North Station Directory</title>
+<style>
+  :root {
+    --bg: #f0f2f5; --card: #ffffff; --text: #1a1a2e; --text2: #555;
+    --primary: #2563eb; --primary-hover: #1d4ed8; --border: #e2e8f0;
+    --success: #10b981; --danger: #ef4444; --warning: #f59e0b;
+    --shadow: 0 2px 8px rgba(0,0,0,0.08); --radius: 12px;
+  }
+  .dark {
+    --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --text2: #94a3b8;
+    --primary: #3b82f6; --primary-hover: #2563eb; --border: #334155;
+    --shadow: 0 2px 8px rgba(0,0,0,0.3);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); transition: all 0.3s; }
+  .header { background: linear-gradient(135deg, #1e3a5f, #2563eb); color: white; padding: 20px 30px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+  .header h1 { font-size: 1.6rem; }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
+  .header-actions button { background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 0.85rem; transition: all 0.2s; }
+  .header-actions button:hover { background: rgba(255,255,255,0.25); }
+  .tabs { display: flex; background: var(--card); border-bottom: 2px solid var(--border); padding: 0 20px; overflow-x: auto; }
+  .tab { padding: 14px 24px; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 500; color: var(--text2); transition: all 0.2s; white-space: nowrap; }
+  .tab:hover { color: var(--primary); }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+  .content { max-width: 1500px; margin: 0 auto; padding: 20px; }
+  .panel { display: none; }
+  .panel.active { display: block; }
+  .card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 20px; margin-bottom: 20px; border: 1px solid var(--border); }
+  .search-bar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 20px; }
+  .search-bar input, .search-bar select { padding: 10px 16px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; background: var(--card); color: var(--text); outline: none; transition: border 0.2s; }
+  .search-bar input:focus, .search-bar select:focus { border-color: var(--primary); }
+  .search-bar input { flex: 1; min-width: 250px; }
+  .btn { padding: 10px 20px; border: none; border-radius: 8px; cursor: pointer; font-size: 0.9rem; font-weight: 500; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-success { background: var(--success); color: white; }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-warning { background: var(--warning); color: white; }
+  .btn-sm { padding: 6px 12px; font-size: 0.8rem; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+  th { background: var(--primary); color: white; padding: 10px 8px; text-align: left; font-weight: 600; white-space: nowrap; position: sticky; top: 0; }
+  td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:hover td { background: rgba(37, 99, 235, 0.04); }
+  .phone-link { color: var(--primary); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+  .phone-link:hover { text-decoration: underline; }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: var(--card); border-radius: var(--radius); padding: 24px; border: 1px solid var(--border); text-align: center; box-shadow: var(--shadow); }
+  .stat-card .number { font-size: 2.5rem; font-weight: 700; color: var(--primary); }
+  .stat-card .label { color: var(--text2); font-size: 0.9rem; margin-top: 6px; }
+  .stat-card.highlight { background: linear-gradient(135deg, #1e3a5f, #2563eb); border: none; }
+  .stat-card.highlight .number { color: white; }
+  .stat-card.highlight .label { color: rgba(255,255,255,0.8); }
+  .ctl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; margin-top: 16px; }
+  .ctl-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow); transition: all 0.2s; }
+  .ctl-card:hover { border-color: var(--primary); transform: translateY(-2px); }
+  .ctl-card .ctl-name { font-weight: 600; font-size: 0.95rem; }
+  .ctl-card .ctl-count { background: var(--primary); color: white; padding: 6px 14px; border-radius: 20px; font-weight: 700; font-size: 0.9rem; }
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000; justify-content: center; align-items: center; padding: 20px; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--card); border-radius: var(--radius); padding: 30px; max-width: 600px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+  .modal h2 { margin-bottom: 20px; }
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-weight: 500; margin-bottom: 4px; font-size: 0.85rem; color: var(--text2); }
+  .form-group input { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; background: var(--bg); color: var(--text); outline: none; }
+  .form-group input:focus { border-color: var(--primary); }
+  .form-actions { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+  .pagination { display: flex; justify-content: center; align-items: center; gap: 8px; margin-top: 20px; flex-wrap: wrap; }
+  .pagination button { padding: 8px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--text); cursor: pointer; font-size: 0.85rem; }
+  .pagination button.active { background: var(--primary); color: white; border-color: var(--primary); }
+  .pagination button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .page-info { color: var(--text2); font-size: 0.85rem; }
+  .toast { position: fixed; bottom: 30px; right: 30px; padding: 14px 24px; border-radius: 10px; color: white; font-weight: 500; z-index: 2000; transform: translateY(100px); opacity: 0; transition: all 0.3s; }
+  .toast.show { transform: translateY(0); opacity: 1; }
+  .toast.success { background: var(--success); }
+  .toast.error { background: var(--danger); }
+  .upload-area { border: 2px dashed var(--border); border-radius: var(--radius); padding: 40px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 20px; }
+  .upload-area:hover { border-color: var(--primary); background: rgba(37,99,235,0.03); }
+  .upload-area.dragover { border-color: var(--primary); background: rgba(37,99,235,0.08); }
+  .upload-icon { font-size: 3rem; margin-bottom: 10px; }
+  .no-data { color: #999; font-style: italic; font-size: 0.8rem; }
+  .admin-lock { background: linear-gradient(135deg, #fef3c7, #fde68a); border: 1px solid #f59e0b; border-radius: 10px; padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .admin-lock input { padding: 10px 16px; border: 1px solid var(--border); border-radius: 8px; font-size: 0.95rem; outline: none; flex: 1; min-width: 200px; }
+  .admin-lock .lock-status { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .admin-lock .lock-status.unlocked { color: var(--success); }
+  .admin-lock .lock-status.locked { color: var(--danger); }
+  @media (max-width: 768px) { .header { padding: 15px; } .header h1 { font-size: 1.2rem; } .content { padding: 12px; } .tab { padding: 12px 16px; font-size: 0.85rem; } .stats-grid { grid-template-columns: repeat(2, 1fr); } .ctl-grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>📍 North Station Directory</h1>
+  <div class="header-actions">
+    <button onclick="exportJSON()">📥 Export JSON</button>
+    <button onclick="toggleDark()">🌙 Dark Mode</button>
+  </div>
+</div>
+
+<div class="tabs">
+  <div class="tab active" onclick="switchTab('search')">🔍 Search</div>
+  <div class="tab" onclick="switchTab('dashboard')">📊 Dashboard</div>
+  <div class="tab" onclick="switchTab('edit')">✏️ Edit</div>
+</div>
+
+<div class="content">
+
+  <div id="panel-search" class="panel active">
+    <div class="search-bar">
+      <input type="text" id="searchInput" placeholder="🔍 Search by station code, location, name, CTL, CRM, COM..." oninput="debounceSearch()">
+      <select id="filterCtl" onchange="loadStations()"><option value="">All CTLs</option></select>
+      <select id="filterCom" onchange="loadStations()"><option value="">All COMs</option></select>
+      <button class="btn btn-primary" onclick="loadStations()">Search</button>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Station Code</th><th>Location</th><th>State</th><th>Zone</th><th>Station Manager</th><th>SM 📞</th><th>CTL</th><th>CTL 📞</th><th>CRM</th><th>COM</th><th>ZM</th></tr></thead>
+          <tbody id="stationTableBody"><tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text2)">Loading stations...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+
+  <div id="panel-dashboard" class="panel">
+    <div class="stats-grid" id="statsGrid"></div>
+    <div class="card">
+      <h3 style="margin-bottom:16px">👤 Stations Under Each CTL</h3>
+      <div id="ctlGrid" class="ctl-grid"></div>
+    </div>
+  </div>
+
+  <div id="panel-edit" class="panel">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:20px">
+        <h3>✏️ Manage Stations</h3>
+        <button class="btn btn-success" onclick="openAddModal()">➕ Add Station</button>
+      </div>
+      <div class="admin-lock" id="adminSection">
+        <span style="font-size:1.2rem">🔐</span>
+        <span id="lockStatus" class="lock-status locked">Upload Locked — Admin Only</span>
+        <input type="password" id="adminPwdInput" placeholder="Enter admin password to unlock upload..." onkeydown="if(event.key==='Enter')verifyAdmin()">
+        <button class="btn btn-warning btn-sm" id="unlockBtn" onclick="verifyAdmin()">🔓 Unlock</button>
+      </div>
+      <div id="uploadSection" style="display:none">
+        <div class="upload-area" id="dropZone" ondragover="event.preventDefault();this.classList.add('dragover')" ondragleave="this.classList.remove('dragover')" ondrop="handleDrop(event)" onclick="document.getElementById('fileInput').click()">
+          <div class="upload-icon">📤</div>
+          <div style="font-size:1.1rem;font-weight:600;margin-bottom:6px">Drop Excel file here or click to browse</div>
+          <div style="color:var(--text2);font-size:0.85rem">Supports .xlsx, .xls, .csv — replaces all existing data</div>
+        </div>
+        <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none" onchange="uploadFile(this)">
+      </div>
+      <div class="search-bar" style="margin-top:10px">
+        <input type="text" id="editSearchInput" placeholder="🔍 Search stations to edit..." oninput="debounceEditSearch()">
+        <select id="editFilterCtl" onchange="loadEditTable()"><option value="">All CTLs</option></select>
+        <select id="editFilterCom" onchange="loadEditTable()"><option value="">All COMs</option></select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Code</th><th>Location</th><th>State</th><th>Zone</th><th>SM Name</th><th>SM #</th><th>CTL</th><th>CTL #</th><th>CRM</th><th>COM</th><th>ZM</th><th>Actions</th></tr></thead>
+          <tbody id="editTableBody"><tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text2)">Loading...</td></tr></tbody>
+        </table>
+      </div>
+      <div class="pagination" id="editPagination"></div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <h2 id="modalTitle">Add Station</h2>
+    <input type="hidden" id="editId">
+    <div class="form-group"><label>Station Code</label><input id="f_station_code"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label>Location</label><input id="f_location"></div>
+      <div class="form-group"><label>State</label><input id="f_state"></div>
+    </div>
+    <div class="form-group"><label>Zone</label><input id="f_zone"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label>Station Manager Name</label><input id="f_sm_name"></div>
+      <div class="form-group"><label>Station Manager Number</label><input id="f_sm_number"></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label>CTL Name</label><input id="f_ctl_name"></div>
+      <div class="form-group"><label>CTL Number</label><input id="f_ctl_number"></div>
+    </div>
+    <div class="form-group"><label>CRM</label><input id="f_crm"></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+      <div class="form-group"><label>COM</label><input id="f_com"></div>
+      <div class="form-group"><label>ZM</label><input id="f_zm"></div>
+    </div>
+    <div class="form-actions">
+      <button class="btn" style="background:var(--border);color:var(--text)" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="saveStation()">💾 Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+var MYPIN = '';
+var isAdmin = false;
+var currentPage = 1;
+var editPage = 1;
+var FIELDS = ['station_code','location','state','zone','sm_name','sm_number','ctl_name','ctl_number','crm','com','zm'];
+
+function switchTab(tab) {
+  document.querySelectorAll('.tab').forEach(function(t) { t.classList.remove('active'); });
+  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+  document.querySelector('.tab[onclick="switchTab(\'' + tab + '\')"]').classList.add('active');
+  document.getElementById('panel-' + tab).classList.add('active');
+  if (tab === 'dashboard') loadDashboard();
+  if (tab === 'edit') loadEditTable();
+}
+
+function toggleDark() {
+  document.body.classList.toggle('dark');
+  localStorage.setItem('dark', document.body.classList.contains('dark'));
+}
+if (localStorage.getItem('dark') === 'true') document.body.classList.add('dark');
+
+function showToast(msg, type) {
+  type = type || 'success';
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  setTimeout(function() { t.classList.remove('show'); }, 3000);
+}
+
+function formatVal(val) {
+  if (!val || val.trim() === '' || val.toLowerCase().indexOf('no data') !== -1) return '<span class="no-data">—</span>';
+  return esc(val);
+}
+
+function phoneHTML(number) {
+  if (!number || number.trim() === '' || number.toLowerCase().indexOf('no data') !== -1) return '<span class="no-data">—</span>';
+  return '<a href="tel:' + number + '" class="phone-link">📞 ' + esc(number) + '</a>';
+}
+
+function verifyAdmin() {
+  var pwd = document.getElementById('adminPwdInput').value;
+  if (!pwd) { showToast('Please enter the admin password', 'error'); return; }
+  fetch('/api/verify-admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: pwd })
+  })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (data.success) {
+      isAdmin = true;
+      MYPIN = pwd;
+      document.getElementById('uploadSection').style.display = 'block';
+      document.getElementById('lockStatus').textContent = '✅ Upload Unlocked';
+      document.getElementById('lockStatus').className = 'lock-status unlocked';
+      document.getElementById('adminPwdInput').style.display = 'none';
+      document.getElementById('unlockBtn').style.display = 'none';
+      showToast('Admin access granted!');
+    } else {
+      showToast('Wrong password!', 'error');
+    }
+  })
+  .catch(function() { showToast('Verification failed', 'error'); });
+}
+
+var searchTimer;
+function debounceSearch() { clearTimeout(searchTimer); searchTimer = setTimeout(function() { currentPage = 1; loadStations(); }, 300); }
+var editSearchTimer;
+function debounceEditSearch() { clearTimeout(editSearchTimer); editSearchTimer = setTimeout(function() { editPage = 1; loadEditTable(); }, 300); }
+
+function loadFilters() {
+  fetch('/api/filters')
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    var ctlSelect = document.getElementById('filterCtl');
+    var comSelect = document.getElementById('filterCom');
+    ctlSelect.innerHTML = '<option value="">All CTLs</option>';
+    comSelect.innerHTML = '<option value="">All COMs</option>';
+    data.ctls.forEach(function(c) { ctlSelect.innerHTML += '<option value="' + c + '">' + c + '</option>'; });
+    data.coms.forEach(function(c) { comSelect.innerHTML += '<option value="' + c + '">' + c + '</option>'; });
+    var editCtlSelect = document.getElementById('editFilterCtl');
+    var editComSelect = document.getElementById('editFilterCom');
+    editCtlSelect.innerHTML = '<option value="">All CTLs</option>';
+    editComSelect.innerHTML = '<option value="">All COMs</option>';
+    data.ctls.forEach(function(c) { editCtlSelect.innerHTML += '<option value="' + c + '">' + c + '</option>'; });
+    data.coms.forEach(function(c) { editComSelect.innerHTML += '<option value="' + c + '">' + c + '</option>'; });
+  })
+  .catch(function(e) { console.error('Failed to load filters', e); });
+}
+
+function loadStations() {
+  var search = document.getElementById('searchInput').value;
+  var ctl = document.getElementById('filterCtl').value;
+  var com = document.getElementById('filterCom').value;
+  var params = new URLSearchParams({ page: currentPage, limit: 50 });
+  if (search) params.set('search', search);
+  if (ctl) params.set('ctl', ctl);
+  if (com) params.set('com', com);
+
+  fetch('/api/stations?' + params)
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    var tbody = document.getElementById('stationTableBody');
+    if (data.stations.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="11" style="text-align:center;padding:40px;color:var(--text2)">No stations found.</td></tr>';
+      document.getElementById('pagination').innerHTML = '';
+      return;
+    }
+    tbody.innerHTML = data.stations.map(function(s) {
+      return '<tr><td><strong>' + esc(s.station_code) + '</strong></td><td>' + formatVal(s.location) + '</td><td>' + formatVal(s.state) + '</td><td>' + formatVal(s.zone) + '</td><td>' + formatVal(s.sm_name) + '</td><td>' + phoneHTML(s.sm_number) + '</td><td>' + formatVal(s.ctl_name) + '</td><td>' + phoneHTML(s.ctl_number) + '</td><td>' + formatVal(s.crm) + '</td><td>' + formatVal(s.com) + '</td><td>' + formatVal(s.zm) + '</td></tr>';
+    }).join('');
+    renderPagination('pagination', data.page, data.totalPages, data.total, function(p) { currentPage = p; loadStations(); });
+  })
+  .catch(function() {
+    document.getElementById('stationTableBody').innerHTML = '<tr><td colspan="11" style="text-align:center;color:var(--danger);padding:30px">❌ Failed to load. Is the server running?</td></tr>';
+  });
+}
+
+function loadEditTable() {
+  var search = document.getElementById('editSearchInput') ? document.getElementById('editSearchInput').value : '';
+  var ctl = document.getElementById('editFilterCtl') ? document.getElementById('editFilterCtl').value : '';
+  var com = document.getElementById('editFilterCom') ? document.getElementById('editFilterCom').value : '';
+  var params = new URLSearchParams({ page: editPage, limit: 30 });
+  if (search) params.set('search', search);
+  if (ctl) params.set('ctl', ctl);
+  if (com) params.set('com', com);
+
+  fetch('/api/stations?' + params)
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    var tbody = document.getElementById('editTableBody');
+    if (data.stations.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="12" style="text-align:center;padding:40px;color:var(--text2)">No stations found.</td></tr>';
+      document.getElementById('editPagination').innerHTML = '';
+      return;
+    }
+    tbody.innerHTML = data.stations.map(function(s) {
+      return '<tr><td>' + esc(s.station_code) + '</td><td>' + esc(s.location) + '</td><td>' + esc(s.state) + '</td><td>' + esc(s.zone) + '</td><td>' + esc(s.sm_name) + '</td><td>' + esc(s.sm_number) + '</td><td>' + esc(s.ctl_name) + '</td><td>' + esc(s.ctl_number) + '</td><td>' + esc(s.crm) + '</td><td>' + esc(s.com) + '</td><td>' + esc(s.zm) + '</td><td style="white-space:nowrap"><button class="btn btn-primary btn-sm" onclick="openEditModal(' + s.id + ')">✏️</button> <button class="btn btn-danger btn-sm" onclick="deleteStation(' + s.id + ')">🗑️</button></td></tr>';
+    }).join('');
+    renderPagination('editPagination', data.page, data.totalPages, data.total, function(p) { editPage = p; loadEditTable(); });
+  })
+  .catch(function() {
+    document.getElementById('editTableBody').innerHTML = '<tr><td colspan="12" style="text-align:center;color:var(--danger)">Failed to load</td></tr>';
+  });
+}
+
+function renderPagination(containerId, page, totalPages, total, onPageChange) {
+  var container = document.getElementById(containerId);
+  if (totalPages <= 1) { container.innerHTML = '<span class="page-info">' + total + ' stations</span>'; return; }
+  var html = '<button ' + (page <= 1 ? 'disabled' : '') + '>◀️ Prev</button>';
+  var start = Math.max(1, page - 2);
+  var end = Math.min(totalPages, page + 2);
+  for (var i = start; i <= end; i++) { html += '<button class="' + (i === page ? 'active' : '') + '">' + i + '</button>'; }
+  html += '<button ' + (page >= totalPages ? 'disabled' : '') + '>Next ▶️</button>';
+  html += '<span class="page-info">' + total + ' stations</span>';
+  container.innerHTML = html;
+  var buttons = container.querySelectorAll('button');
+  buttons[0].onclick = function() { if (page > 1) onPageChange(page - 1); };
+  var idx = 1;
+  for (var i = start; i <= end; i++) { (function(pn) { buttons[idx].onclick = function() { onPageChange(pn); }; })(i); idx++; }
+  buttons[buttons.length - 1].onclick = function() { if (page < totalPages) onPageChange(page + 1); };
+}
+
+function loadDashboard() {
+  fetch('/api/stats')
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    document.getElementById('statsGrid').innerHTML =
+      '<div class="stat-card highlight"><div class="number">' + data.northCount + '</div><div class="label">Active Stations in North Zone</div></div>' +
+      '<div class="stat-card"><div class="number">' + data.states.length + '</div><div class="label">States Covered</div></div>' +
+      '<div class="stat-card"><div class="number">' + data.ctls.length + '</div><div class="label">Active CTLs</div></div>' +
+      '<div class="stat-card"><div class="number">' + data.coms.length + '</div><div class="label">COMs</div></div>';
+    document.getElementById('ctlGrid').innerHTML = data.ctls.map(function(c) {
+      return '<div class="ctl-card"><div class="ctl-name">👤 ' + esc(c.ctl_name) + '</div><div class="ctl-count">' + c.count + ' stations</div></div>';
+    }).join('');
+  })
+  .catch(function() { document.getElementById('statsGrid').innerHTML = '<div class="card" style="color:var(--danger)">❌ Failed to load dashboard</div>'; });
+}
+
+function openAddModal() {
+  document.getElementById('modalTitle').textContent = '➕ Add Station';
+  document.getElementById('editId').value = '';
+  FIELDS.forEach(function(f) { document.getElementById('f_' + f).value = ''; });
+  document.getElementById('modalOverlay').classList.add('show');
+}
+
+function openEditModal(id) {
+  fetch('/api/stations/' + id)
+  .then(function(res) { return res.json(); })
+  .then(function(s) {
+    document.getElementById('modalTitle').textContent = '✏️ Edit: ' + s.station_code;
+    document.getElementById('editId').value = id;
+    FIELDS.forEach(function(f) { document.getElementById('f_' + f).value = s[f] || ''; });
+    document.getElementById('modalOverlay').classList.add('show');
+  })
+  .catch(function() { showToast('Failed to load station', 'error'); });
+}
+
+function closeModal() { document.getElementById('modalOverlay').classList.remove('show'); }
+
+function saveStation() {
+  var id = document.getElementById('editId').value;
+  var body = {};
+  FIELDS.forEach(function(f) { body[f] = document.getElementById('f_' + f).value; });
+  var url = id ? ('/api/stations/' + id) : '/api/stations';
+  var method = id ? 'PUT' : 'POST';
+  fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  .then(function(res) { return res.json(); })
+  .then(function(data) { showToast(data.message); closeModal(); loadStations(); loadEditTable(); loadFilters(); })
+  .catch(function() { showToast('Network error', 'error'); });
+}
+
+function deleteStation(id) {
+  if (!confirm('Are you sure you want to delete this station?')) return;
+  fetch('/api/stations/' + id, { method: 'DELETE' })
+  .then(function(res) { return res.json(); })
+  .then(function() { showToast('Station deleted'); loadEditTable(); loadStations(); loadFilters(); })
+  .catch(function() { showToast('Network error', 'error'); });
+}
+
+function uploadFile(input) {
+  if (!isAdmin) { showToast('Admin access required!', 'error'); input.value = ''; return; }
+  var file = input.files[0];
+  if (!file) return;
+  if (!confirm('This will REPLACE all existing data. Continue?')) { input.value = ''; return; }
+  var formData = new FormData();
+  formData.append('file', file);
+  showToast('Uploading...', 'success');
+  fetch('/api/upload?key=' + encodeURIComponent(MYPIN), { method: 'POST', body: formData })
+  .then(function(res) { return res.json(); })
+  .then(function(data) {
+    if (data.error) { showToast(data.error, 'error'); }
+    else { showToast(data.message); loadStations(); loadEditTable(); loadFilters(); }
+  })
+  .catch(function() { showToast('Upload failed', 'error'); });
+  input.value = '';
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('dropZone').classList.remove('dragover');
+  if (!isAdmin) { showToast('Admin access required!', 'error'); return; }
+  var file = e.dataTransfer.files[0];
+  if (file) { var input = document.getElementById('fileInput'); var dt = new DataTransfer(); dt.items.add(file); input.files = dt.files; uploadFile(input); }
+}
+
+function exportJSON() { window.open('/api/export', '_blank'); }
+
+function esc(str) { if (!str) return ''; var div = document.createElement('div'); div.textContent = str; return div.innerHTML; }
+
+loadFilters();
+loadStations();
+</script>
+</body>
+</html>
